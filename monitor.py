@@ -67,9 +67,9 @@ def main():
 
     new_items = list(set(current) - set(previous))
 
-    #if new_items:
-    #    send_email(new_items)
-    send_email(["これはテストメールです（出品検知ロジックは正常）"],)
+    if new_items:
+        send_email(new_items)
+    #send_email(["これはテストメールです（出品検知ロジックは正常）"],)
 
     save_current(current)
 
