@@ -5,7 +5,12 @@ import smtplib
 from email.mime.text import MIMEText
 from bs4 import BeautifulSoup
 
-URL = "https://tradead.tixplus.jp/wbc2026/buy/bidding/listings/1517"
+URLS = {
+    "1517": "https://tradead.tixplus.jp/wbc2026/buy/bidding/listings/1517",
+    "1519": "https://tradead.tixplus.jp/wbc2026/buy/bidding/listings/1519",
+    "1523": "https://tradead.tixplus.jp/wbc2026/buy/bidding/listings/1523",
+}
+
 STATE_FILE = "state.json"
 
 HEADERS = {
@@ -13,7 +18,7 @@ HEADERS = {
 }
 
 # =====================
-# 出品数を取得
+# 出品数取得
 # =====================
 def extract_listing_count(html: str) -> int | None:
     soup = BeautifulSoup(html, "html.parser")
@@ -22,11 +27,9 @@ def extract_listing_count(html: str) -> int | None:
     if not main:
         return None
 
-    # script/style除去
     for tag in main(["script", "style", "noscript"]):
         tag.decompose()
 
-    # pタグで「数字のみ」のものを列挙
     numeric_ps = [
         p for p in main.find_all("p")
         if p.get_text(strip=True).isdigit()
@@ -35,7 +38,7 @@ def extract_listing_count(html: str) -> int | None:
     if not numeric_ps:
         return None
 
-    # XPathの深さ的に「最も深い p」を採用（重要）
+    # XPathの深さに近い「最も深い p」を採用
     def depth(tag):
         d = 0
         while tag.parent:
@@ -81,26 +84,35 @@ def save_state(data):
 # main
 # =====================
 def main():
-    res = requests.get(URL, headers=HEADERS, timeout=15)
-    res.raise_for_status()
-
-    count = extract_listing_count(res.text)
-    if count is None:
-        print("出品数を取得できませんでした")
-        return
-
     state = load_state()
-    prev = state.get("count")
+    notifications = []
 
-    # 0 → 1以上 の瞬間だけ通知
-    if prev is not None and prev == 0 and count > 0:
+    for key, url in URLS.items():
+        res = requests.get(url, headers=HEADERS, timeout=15)
+        res.raise_for_status()
+
+        count = extract_listing_count(res.text)
+        if count is None:
+            print(f"[{key}] 出品数を取得できませんでした")
+            continue
+
+        prev = state.get(key)
+
+        print(f"[{key}] 出品数: {prev} → {count}")
+
+        if prev is not None and prev == 0 and count > 0:
+            notifications.append(f"・ID {key}: {count} 件\n  {url}")
+
+        state[key] = count
+
+    if notifications:
         send_email(
             subject="【チケット出品あり】",
-            body=f"{count} 件の出品が確認されました。\n\n{URL}"
+            body="以下のページで出品が確認されました。\n\n"
+                 + "\n".join(notifications)
         )
 
-    save_state({"count": count})
-    print(f"現在の出品数: {count}")
+    save_state(state)
 
 
 if __name__ == "__main__":
